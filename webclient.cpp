@@ -1,10 +1,10 @@
 #include <iostream>
 #include <string>
 #include <cstring>
+#include <cstdlib>
 
 #include <sys/socket.h>
 #include <netdb.h>
-
 
 using namespace std;
 
@@ -67,7 +67,6 @@ int main(int argc, char *argv[]){
 	}
 	cout << "bytes recieved : " << bytes_recieved << endl ;
 	cout << incoming_data_buffer << endl;
-
 
 	return EXIT_SUCCESS;
 }
