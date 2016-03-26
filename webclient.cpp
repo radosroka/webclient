@@ -8,18 +8,22 @@
 #include <netdb.h>
 #include <unistd.h>
 
-#include <vector>
+#include <locale> 
 #include <fstream>
 
 using namespace std;
 
 const int BUFFER_SIZE = 1024;
 
-int main(int argc, char *argv[]){
+int get(const char * address, int counter){
 
-	if (argc != 2) return EXIT_FAILURE;
+	if (counter > 5){
+		cerr << "Error: More than 5 redirections" << endl;
+	}
 
-	string arg = &argv[1][7];
+	locale loc;
+
+	string arg = &address[7];
 	string port = "80";
 	string path = "/";
 	string file = "";
@@ -49,18 +53,11 @@ int main(int argc, char *argv[]){
 		out_file = file;
 	}
 
-	cout << arg << endl;
-	cout << port << endl;
-	cout << path << endl;
-	cout << file << endl;
-
 	int status;
 	struct addrinfo host_info;
   	struct addrinfo *host_info_list, *i;
 
   	memset(&host_info, 0, sizeof host_info);
- 
-	cout << "Setting up the structs..."  << endl;
  
 	host_info.ai_family = AF_UNSPEC;
 	host_info.ai_socktype = SOCK_STREAM;
@@ -92,17 +89,14 @@ int main(int argc, char *argv[]){
 	}
 
 
-	cout << "send()ing message..."  << endl;
+	cout << "send()ing message..."  << endl << endl;
 	string msg = "GET " + path + file + " HTTP/1.1\r\nhost: "
 				 +  arg + "\r\nConnection: close\r\n" +
-				 "\r\nAccept-Charset: ISO-8859-1,UTF-8;q=0.7,*;q=0.7\r\n\r\n";
-	cout << msg;
-	ssize_t bytes_sent;
-	bytes_sent = send(socketfd, msg.c_str(), msg.length(), 0);
-	cout << "bytes send : " << bytes_sent << endl ;
- 
+				 "Accept-Charset: ISO-8859-1,UTF-8;q=0.7,*;q=0.7\r\n\r\n";
+	cout << msg << endl;
 
-	cout << "Waiting to recieve data..."  << endl;
+	send(socketfd, msg.c_str(), msg.length(), 0);
+ 
 	ssize_t bytes_recieved = 0;
 	ssize_t bytes;
 	string data;
@@ -110,24 +104,70 @@ int main(int argc, char *argv[]){
 	
 	while ((bytes = recv(socketfd, incoming_data_buffer, BUFFER_SIZE, 0))){
 		bytes_recieved += bytes;
-		if (bytes == 0) cout << "host shut down." << endl ;
-		else if (bytes == -1){
+		if (bytes == -1){
 			cerr << "recieve error!" << endl ;
 			return EXIT_FAILURE;
 		}
 		else data.append(incoming_data_buffer, bytes);
 	}
-	cout << "bytes recieved : " << bytes_recieved << endl << endl ;
 
 	string header = data.substr(0, data.find("\r\n\r\n"));
 	string body = data.substr(data.find("\r\n\r\n")+4);
 
 	cout << endl << header << endl;
 
-	ofstream output;
-	output.open(out_file, ios::out | ios::binary);
-	output << body;
-	output.close();
+	string upper_header = "";
+	for (unsigned long int i = 0 ; i < header.length() ; i++)
+		upper_header.push_back(toupper(header[i], loc));
+
+	cout << endl << upper_header << endl;
+
+
+	pos = 0;
+	string response;
+	string type;
+	string code;
+	if ((pos = upper_header.find("HTTP")) != string::npos){
+		type = upper_header.substr(pos, pos+9);
+		pos += 9;
+		int u = upper_header.find("\r\n");
+		response = upper_header.substr(pos, u - pos);
+		code = response.substr(0, 3);
+	}
+
+	if (code == "200"){
+		ofstream output;
+		output.open(out_file, ios::out | ios::binary);
+		output << body;
+		output.close();
+		return EXIT_SUCCESS;
+	}
+	else if (code[0] == '4' || code[0] == '5'){
+		cerr << "Error: " << response << endl;
+		return EXIT_FAILURE;
+	}
+	else if (code[0] == '3'){
+		pos = 0;
+		if ((pos = upper_header.find("LOCATION")) != string::npos){
+			pos += 10;
+			int u = header.find("\r\n", pos);
+			string address = header.substr(pos, u - pos);
+			if (get(address.c_str(), counter+1))return EXIT_FAILURE;
+		}
+	}
+	else {
+		cerr << "Error: " << "unknown" << endl;
+		return EXIT_FAILURE;
+	}
+
+	return EXIT_SUCCESS;
+}
+
+int main(int argc, char *argv[]){
+
+	if (argc != 2) return EXIT_FAILURE;
+
+	if (get(argv[1], 1))return EXIT_FAILURE;
 
 	return EXIT_SUCCESS;
 }
