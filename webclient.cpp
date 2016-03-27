@@ -19,6 +19,7 @@ int get(const char * address, int counter){
 
 	if (counter > 5){
 		cerr << "Error: More than 5 redirections" << endl;
+		return EXIT_FAILURE;
 	}
 
 	locale loc;
@@ -53,6 +54,8 @@ int get(const char * address, int counter){
 		out_file = file;
 	}
 
+	cout << port << endl << path << endl << file << endl;
+
 	int status;
 	struct addrinfo host_info;
   	struct addrinfo *host_info_list, *i;
@@ -85,6 +88,7 @@ int get(const char * address, int counter){
 
 	if (i == NULL){
 		cerr << "couldn't connect\n";
+		freeaddrinfo(host_info_list);
 		return EXIT_FAILURE;
 	}
 
@@ -99,16 +103,20 @@ int get(const char * address, int counter){
  
 	ssize_t bytes_recieved = 0;
 	ssize_t bytes;
-	string data;
+	string data = "";
 	char incoming_data_buffer[BUFFER_SIZE];
+	memset(incoming_data_buffer, 0, BUFFER_SIZE);
 	
 	while ((bytes = recv(socketfd, incoming_data_buffer, BUFFER_SIZE, 0))){
 		bytes_recieved += bytes;
 		if (bytes == -1){
 			cerr << "recieve error!" << endl ;
+			close(socketfd);
+			freeaddrinfo(host_info_list);
 			return EXIT_FAILURE;
 		}
 		else data.append(incoming_data_buffer, bytes);
+		memset(incoming_data_buffer, 0, BUFFER_SIZE);
 	}
 
 	string header = data.substr(0, data.find("\r\n\r\n"));
@@ -119,8 +127,6 @@ int get(const char * address, int counter){
 	string upper_header = "";
 	for (unsigned long int i = 0 ; i < header.length() ; i++)
 		upper_header.push_back(toupper(header[i], loc));
-
-	cout << endl << upper_header << endl;
 
 
 	pos = 0;
@@ -135,32 +141,57 @@ int get(const char * address, int counter){
 		code = response.substr(0, 3);
 	}
 
+	
+	if (upper_header.find("TRANSFER-ENCODING: CHUNKED") != string::npos){
+		pos = 0;
+		unsigned long int start = 0;
+		unsigned long int size = 0;
+		string tmp = "";
+		while(1){
+			while(body.length() > pos && body[pos] != '\r')pos++;
+			if (start == pos)break;
+			size = stoi(body.substr(start, pos), nullptr, 16);
+			if (pos + 2 < body.length())pos += 2;
+			else break;
+			tmp += body.substr(pos, size);
+			if (pos + size < body.length()) pos += size + 2;
+			else break;
+			start = pos;
+		}
+		body = tmp;
+	}
+
 	if (code == "200"){
 		ofstream output;
 		output.open(out_file, ios::out | ios::binary);
 		output << body;
 		output.close();
+		close(socketfd);
+		freeaddrinfo(host_info_list);
 		return EXIT_SUCCESS;
 	}
-	else if (code[0] == '4' || code[0] == '5'){
-		cerr << "Error: " << response << endl;
-		return EXIT_FAILURE;
-	}
-	else if (code[0] == '3'){
+	else if (code == "301" || code == "302"){
 		pos = 0;
 		if ((pos = upper_header.find("LOCATION")) != string::npos){
 			pos += 10;
 			int u = header.find("\r\n", pos);
 			string address = header.substr(pos, u - pos);
-			if (get(address.c_str(), counter+1))return EXIT_FAILURE;
+			if (get(address.c_str(), counter+1)){
+				close(socketfd);
+				freeaddrinfo(host_info_list);
+				return EXIT_FAILURE;
+			}
 		}
 	}
 	else {
-		cerr << "Error: " << "unknown" << endl;
+		cerr << "Error: " << response << endl;
+		close(socketfd);
+		freeaddrinfo(host_info_list);
 		return EXIT_FAILURE;
 	}
 
 	return EXIT_SUCCESS;
+
 }
 
 int main(int argc, char *argv[]){
