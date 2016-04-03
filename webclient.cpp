@@ -171,7 +171,7 @@ int get(const char * address, int counter, map<string, string> &redir, char vers
 		while(1){
 			while(body.length() > pos && body[pos] != '\r')pos++;
 			if (start == pos)break;
-			size = stoi(body.substr(start, pos), nullptr, 16);
+			size = strtol(body.substr(start, pos).c_str(), NULL, 16);
 			if (pos + 2 < body.length())pos += 2;
 			else break;
 			tmp += body.substr(pos, size);
